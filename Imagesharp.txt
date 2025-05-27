@@ -1,0 +1,277 @@
+using System;
+using System.Drawing;
+using System.IO;
+using System.Windows.Forms;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
+
+// 注意：需要避免命名衝突
+using SixLaborsImage = SixLabors.ImageSharp.Image;
+using SystemImage = System.Drawing.Image;
+
+public static class ImageConverter
+{
+    // 方法1：基本轉換 - 適用於 .NET Framework
+    public static void LoadAndDisplay16BitImage(string imagePath, PictureBox pictureBox)
+    {
+        try
+        {
+            // 載入 16-bit 圖片
+            using (var image16bit = SixLaborsImage.Load<Rgba64>(imagePath))
+            {
+                // 轉換為 8-bit
+                using (var image8bit = image16bit.CloneAs<Rgba32>())
+                {
+                    // 轉換為 System.Drawing.Bitmap
+                    var bitmap = ConvertToBitmap(image8bit);
+                    
+                    // 釋放舊圖片記憶體
+                    if (pictureBox.Image != null)
+                    {
+                        pictureBox.Image.Dispose();
+                    }
+                    
+                    pictureBox.Image = bitmap;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"載入圖片失敗: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    // 方法2：含亮度對比度調整
+    public static void LoadAndDisplayWithAdjustment(string imagePath, PictureBox pictureBox, 
+        float brightness = 1.0f, float contrast = 1.0f)
+    {
+        try
+        {
+            using (var image16bit = SixLaborsImage.Load<Rgba64>(imagePath))
+            {
+                using (var image8bit = image16bit.CloneAs<Rgba32>())
+                {
+                    // 調整亮度和對比度
+                    image8bit.Mutate(x => x
+                        .Brightness(brightness)
+                        .Contrast(contrast));
+                    
+                    var bitmap = ConvertToBitmap(image8bit);
+                    
+                    if (pictureBox.Image != null)
+                    {
+                        pictureBox.Image.Dispose();
+                    }
+                    
+                    pictureBox.Image = bitmap;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"載入圖片失敗: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    // 方法3：處理灰階 16-bit 圖片
+    public static void LoadGrayscale16BitImage(string imagePath, PictureBox pictureBox)
+    {
+        try
+        {
+            using (var image16bit = SixLaborsImage.Load<L16>(imagePath))
+            {
+                using (var image8bit = image16bit.CloneAs<L8>())
+                {
+                    var bitmap = ConvertToBitmap(image8bit);
+                    
+                    if (pictureBox.Image != null)
+                    {
+                        pictureBox.Image.Dispose();
+                    }
+                    
+                    pictureBox.Image = bitmap;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"載入灰階圖片失敗: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    // 輔助方法：將 ImageSharp 圖片轉換為 System.Drawing.Bitmap
+    private static Bitmap ConvertToBitmap<TPixel>(SixLabors.ImageSharp.Image<TPixel> image) 
+        where TPixel : unmanaged, IPixel<TPixel>
+    {
+        using (var memoryStream = new MemoryStream())
+        {
+            image.SaveAsPng(memoryStream);
+            memoryStream.Position = 0;
+            return new Bitmap(memoryStream);
+        }
+    }
+
+    // 方法4：手動轉換，提供更多控制
+    public static void LoadWithManualConversion(string imagePath, PictureBox pictureBox)
+    {
+        try
+        {
+            using (var image16bit = SixLaborsImage.Load<Rgba64>(imagePath))
+            {
+                // 創建 System.Drawing.Bitmap
+                var bitmap = new Bitmap(image16bit.Width, image16bit.Height);
+                
+                // 手動轉換每個像素
+                for (int y = 0; y < image16bit.Height; y++)
+                {
+                    for (int x = 0; x < image16bit.Width; x++)
+                    {
+                        var pixel16 = image16bit[x, y];
+                        
+                        // 從 16-bit 轉換到 8-bit
+                        var color = Color.FromArgb(
+                            pixel16.A >> 8,  // Alpha
+                            pixel16.R >> 8,  // Red
+                            pixel16.G >> 8,  // Green
+                            pixel16.B >> 8   // Blue
+                        );
+                        
+                        bitmap.SetPixel(x, y, color);
+                    }
+                }
+                
+                if (pictureBox.Image != null)
+                {
+                    pictureBox.Image.Dispose();
+                }
+                
+                pictureBox.Image = bitmap;
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"手動轉換失敗: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+}
+
+// Windows Form 使用範例
+public partial class Form1 : Form
+{
+    public Form1()
+    {
+        InitializeComponent();
+        this.FormClosing += Form1_FormClosing;
+    }
+
+    private void btnLoad_Click(object sender, EventArgs e)
+    {
+        using (var openFileDialog = new OpenFileDialog())
+        {
+            openFileDialog.Filter = "圖片檔案 (*.png;*.tiff;*.tif)|*.png;*.tiff;*.tif|所有檔案 (*.*)|*.*";
+            openFileDialog.Title = "選擇 16-bit 圖片檔案";
+            
+            if (openFileDialog.ShowDialog() == DialogResult.OK)
+            {
+                // 基本轉換
+                ImageConverter.LoadAndDisplay16BitImage(openFileDialog.FileName, pictureBox1);
+                
+                // 或者使用調整版本
+                // ImageConverter.LoadAndDisplayWithAdjustment(openFileDialog.FileName, pictureBox1, 1.2f, 1.1f);
+            }
+        }
+    }
+
+    private void btnLoadGrayscale_Click(object sender, EventArgs e)
+    {
+        using (var openFileDialog = new OpenFileDialog())
+        {
+            openFileDialog.Filter = "圖片檔案 (*.png;*.tiff;*.tif)|*.png;*.tiff;*.tif|所有檔案 (*.*)|*.*";
+            
+            if (openFileDialog.ShowDialog() == DialogResult.OK)
+            {
+                ImageConverter.LoadGrayscale16BitImage(openFileDialog.FileName, pictureBox1);
+            }
+        }
+    }
+
+    // 確保程式關閉時釋放圖片記憶體
+    private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+    {
+        if (pictureBox1.Image != null)
+        {
+            pictureBox1.Image.Dispose();
+        }
+    }
+}
+
+// Designer 程式碼範例 (Form1.Designer.cs)
+partial class Form1
+{
+    private System.ComponentModel.IContainer components = null;
+    private PictureBox pictureBox1;
+    private Button btnLoad;
+    private Button btnLoadGrayscale;
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && (components != null))
+        {
+            components.Dispose();
+        }
+        if (pictureBox1.Image != null)
+        {
+            pictureBox1.Image.Dispose();
+        }
+        base.Dispose(disposing);
+    }
+
+    private void InitializeComponent()
+    {
+        this.pictureBox1 = new PictureBox();
+        this.btnLoad = new Button();
+        this.btnLoadGrayscale = new Button();
+        ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).BeginInit();
+        this.SuspendLayout();
+        
+        // pictureBox1
+        this.pictureBox1.BorderStyle = BorderStyle.FixedSingle;
+        this.pictureBox1.Location = new Point(12, 50);
+        this.pictureBox1.Name = "pictureBox1";
+        this.pictureBox1.Size = new Size(560, 400);
+        this.pictureBox1.SizeMode = PictureBoxSizeMode.Zoom;
+        this.pictureBox1.TabIndex = 0;
+        this.pictureBox1.TabStop = false;
+        
+        // btnLoad
+        this.btnLoad.Location = new Point(12, 12);
+        this.btnLoad.Name = "btnLoad";
+        this.btnLoad.Size = new Size(100, 30);
+        this.btnLoad.TabIndex = 1;
+        this.btnLoad.Text = "載入 16-bit 圖片";
+        this.btnLoad.UseVisualStyleBackColor = true;
+        this.btnLoad.Click += new EventHandler(this.btnLoad_Click);
+        
+        // btnLoadGrayscale
+        this.btnLoadGrayscale.Location = new Point(120, 12);
+        this.btnLoadGrayscale.Name = "btnLoadGrayscale";
+        this.btnLoadGrayscale.Size = new Size(100, 30);
+        this.btnLoadGrayscale.TabIndex = 2;
+        this.btnLoadGrayscale.Text = "載入灰階圖片";
+        this.btnLoadGrayscale.UseVisualStyleBackColor = true;
+        this.btnLoadGrayscale.Click += new EventHandler(this.btnLoadGrayscale_Click);
+        
+        // Form1
+        this.AutoScaleDimensions = new SizeF(6F, 12F);
+        this.AutoScaleMode = AutoScaleMode.Font;
+        this.ClientSize = new Size(584, 462);
+        this.Controls.Add(this.btnLoadGrayscale);
+        this.Controls.Add(this.btnLoad);
+        this.Controls.Add(this.pictureBox1);
+        this.Name = "Form1";
+        this.Text = "16-bit 圖片檢視器";
+        ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).EndInit();
+        this.ResumeLayout(false);
+    }
+}
